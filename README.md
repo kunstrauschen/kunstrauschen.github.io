@@ -1,2 +1,2 @@
-# https-kunstrauschen.github.io-
+# kunstrauschen.github.io
 Where perception gets interesting.
