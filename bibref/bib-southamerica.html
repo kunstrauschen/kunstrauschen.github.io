@@ -1,0 +1,840 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+<title>JabRef references</title>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<script type="text/javascript">
+<!--
+// QuickSearch script for JabRef HTML export 
+// Version: 3.0
+//
+// Copyright (c) 2006-2011, Mark Schenk
+//
+// This software is distributed under a Creative Commons Attribution 3.0 License
+// http://creativecommons.org/licenses/by/3.0/
+//
+// Features:
+// - intuitive find-as-you-type searching
+//    ~ case insensitive
+//    ~ ignore diacritics (optional)
+//
+// - search with/without Regular Expressions
+// - match BibTeX key
+//
+
+// Search settings
+var searchAbstract = true;	// search in abstract
+var searchComment = true;	// search in comment
+
+var noSquiggles = true; 	// ignore diacritics when searching
+var searchRegExp = false; 	// enable RegExp searches
+
+
+if (window.addEventListener) {
+	window.addEventListener("load",initSearch,false); }
+else if (window.attachEvent) {
+	window.attachEvent("onload", initSearch); }
+
+function initSearch() {
+	// check for quick search table and searchfield
+	if (!document.getElementById('qs_table')||!document.getElementById('quicksearch')) { return; }
+
+	// load all the rows and sort into arrays
+	loadTableData();
+	
+	//find the query field
+	qsfield = document.getElementById('qs_field');
+
+	// previous search term; used for speed optimisation
+	prevSearch = '';
+
+	//find statistics location
+	stats = document.getElementById('stat');
+	setStatistics(-1);
+	
+	// set up preferences
+	initPreferences();
+
+	// shows the searchfield
+	document.getElementById('quicksearch').style.display = 'block';
+	document.getElementById('qs_field').onkeyup = quickSearch;
+}
+
+function loadTableData() {
+	// find table and appropriate rows
+	searchTable = document.getElementById('qs_table');
+	var allRows = searchTable.getElementsByTagName('tbody')[0].getElementsByTagName('tr');
+
+	// split all rows into entryRows and infoRows (e.g. abstract, comment, bibtex)
+	entryRows = new Array(); infoRows = new Array(); absRows = new Array(); revRows = new Array();
+
+	// get data from each row
+	entryRowsData = new Array(); absRowsData = new Array(); revRowsData = new Array(); 
+	
+	BibTeXKeys = new Array();
+	
+	for (var i=0, k=0, j=0; i<allRows.length;i++) {
+		if (allRows[i].className.match(/entry/)) {
+			entryRows[j] = allRows[i];
+			entryRowsData[j] = stripDiacritics(getTextContent(allRows[i]));
+			allRows[i].id ? BibTeXKeys[j] = allRows[i].id : allRows[i].id = 'autokey_'+j;
+			j ++;
+		} else {
+			infoRows[k++] = allRows[i];
+			// check for abstract/comment
+			if (allRows[i].className.match(/abstract/)) {
+				absRows.push(allRows[i]);
+				absRowsData[j-1] = stripDiacritics(getTextContent(allRows[i]));
+			} else if (allRows[i].className.match(/comment/)) {
+				revRows.push(allRows[i]);
+				revRowsData[j-1] = stripDiacritics(getTextContent(allRows[i]));
+			}
+		}
+	}
+	//number of entries and rows
+	numEntries = entryRows.length;
+	numInfo = infoRows.length;
+	numAbs = absRows.length;
+	numRev = revRows.length;
+}
+
+function quickSearch(){
+	
+	tInput = qsfield;
+
+	if (tInput.value.length == 0) {
+		showAll();
+		setStatistics(-1);
+		qsfield.className = '';
+		return;
+	} else {
+		t = stripDiacritics(tInput.value);
+
+		if(!searchRegExp) { t = escapeRegExp(t); }
+			
+		// only search for valid RegExp
+		try {
+			textRegExp = new RegExp(t,"i");
+			closeAllInfo();
+			qsfield.className = '';
+		}
+			catch(err) {
+			prevSearch = tInput.value;
+			qsfield.className = 'invalidsearch';
+			return;
+		}
+	}
+	
+	// count number of hits
+	var hits = 0;
+
+	// start looping through all entry rows
+	for (var i = 0; cRow = entryRows[i]; i++){
+
+		// only show search the cells if it isn't already hidden OR if the search term is getting shorter, then search all
+		if(cRow.className.indexOf('noshow')==-1 || tInput.value.length <= prevSearch.length){
+			var found = false; 
+
+			if (entryRowsData[i].search(textRegExp) != -1 || BibTeXKeys[i].search(textRegExp) != -1){ 
+				found = true;
+			} else {
+				if(searchAbstract && absRowsData[i]!=undefined) {
+					if (absRowsData[i].search(textRegExp) != -1){ found=true; } 
+				}
+				if(searchComment && revRowsData[i]!=undefined) {
+					if (revRowsData[i].search(textRegExp) != -1){ found=true; } 
+				}
+			}
+			
+			if (found){
+				cRow.className = 'entry show';
+				hits++;
+			} else {
+				cRow.className = 'entry noshow';
+			}
+		}
+	}
+
+	// update statistics
+	setStatistics(hits)
+	
+	// set previous search value
+	prevSearch = tInput.value;
+}
+
+
+// Strip Diacritics from text
+// http://stackoverflow.com/questions/990904/javascript-remove-accents-in-strings
+
+// String containing replacement characters for stripping accents 
+var stripstring = 
+    'AAAAAAACEEEEIIII'+
+    'DNOOOOO.OUUUUY..'+
+    'aaaaaaaceeeeiiii'+
+    'dnooooo.ouuuuy.y'+
+    'AaAaAaCcCcCcCcDd'+
+    'DdEeEeEeEeEeGgGg'+
+    'GgGgHhHhIiIiIiIi'+
+    'IiIiJjKkkLlLlLlL'+
+    'lJlNnNnNnnNnOoOo'+
+    'OoOoRrRrRrSsSsSs'+
+    'SsTtTtTtUuUuUuUu'+
+    'UuUuWwYyYZzZzZz.';
+
+function stripDiacritics(str){
+
+    if(noSquiggles==false){
+        return str;
+    }
+
+    var answer='';
+    for(var i=0;i<str.length;i++){
+        var ch=str[i];
+        var chindex=ch.charCodeAt(0)-192;   // Index of character code in the strip string
+        if(chindex>=0 && chindex<stripstring.length){
+            // Character is within our table, so we can strip the accent...
+            var outch=stripstring.charAt(chindex);
+            // ...unless it was shown as a '.'
+            if(outch!='.')ch=outch;
+        }
+        answer+=ch;
+    }
+    return answer;
+}
+
+// http://stackoverflow.com/questions/3446170/escape-string-for-use-in-javascript-regex
+// NOTE: must escape every \ in the export code because of the JabRef Export...
+function escapeRegExp(str) {
+  return str.replace(/[-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g, "\\$&");
+}
+
+function toggleInfo(articleid,info) {
+
+	var entry = document.getElementById(articleid);
+	var abs = document.getElementById('abs_'+articleid);
+	var rev = document.getElementById('rev_'+articleid);
+	var bib = document.getElementById('bib_'+articleid);
+	
+	if (abs && info == 'abstract') {
+		abs.className.indexOf('noshow') == -1?abs.className = 'abstract noshow':abs.className = 'abstract show';
+	} else if (rev && info == 'comment') {
+		rev.className.indexOf('noshow') == -1?rev.className = 'comment noshow':rev.className = 'comment show';
+	} else if (bib && info == 'bibtex') {
+		bib.className.indexOf('noshow') == -1?bib.className = 'bibtex noshow':bib.className = 'bibtex show';
+	} else { 
+		return;
+	}
+
+	// check if one or the other is available
+	var revshow; var absshow; var bibshow;
+	(abs && abs.className.indexOf('noshow') == -1)? absshow = true: absshow = false;
+	(rev && rev.className.indexOf('noshow') == -1)? revshow = true: revshow = false;	
+	(bib && bib.className.indexOf('noshow') == -1)? bibshow = true: bibshow = false;
+	
+	// highlight original entry
+	if(entry) {
+		if (revshow || absshow || bibshow) {
+		entry.className = 'entry highlight show';
+		} else {
+		entry.className = 'entry show';
+		}
+	}
+	
+	// When there's a combination of abstract/comment/bibtex showing, need to add class for correct styling
+	if(absshow) {
+		(revshow||bibshow)?abs.className = 'abstract nextshow':abs.className = 'abstract';
+	} 
+	if (revshow) {
+		bibshow?rev.className = 'comment nextshow': rev.className = 'comment';
+	}	
+	
+}
+
+function setStatistics (hits) {
+	if(hits < 0) { hits=numEntries; }
+	if(stats) { stats.firstChild.data = hits + '/' + numEntries}
+}
+
+function getTextContent(node) {
+	// Function written by Arve Bersvendsen
+	// http://www.virtuelvis.com
+	
+	if (node.nodeType == 3) {
+	return node.nodeValue;
+	} // text node
+	if (node.nodeType == 1 && node.className != "infolinks") { // element node
+	var text = [];
+	for (var chld = node.firstChild;chld;chld=chld.nextSibling) {
+		text.push(getTextContent(chld));
+	}
+	return text.join("");
+	} return ""; // some other node, won't contain text nodes.
+}
+
+function showAll(){
+	closeAllInfo();
+	for (var i = 0; i < numEntries; i++){ entryRows[i].className = 'entry show'; }
+}
+
+function closeAllInfo(){
+	for (var i=0; i < numInfo; i++){
+		if (infoRows[i].className.indexOf('noshow') ==-1) {
+			infoRows[i].className = infoRows[i].className + ' noshow';
+		}
+	}
+}
+
+function clearQS() {
+	qsfield.value = '';
+	showAll();
+}
+
+function redoQS(){
+	showAll();
+	quickSearch(qsfield);
+}
+
+function updateSetting(obj){
+	var option = obj.id;
+	var checked = obj.value;
+
+	switch(option)
+	 {
+	 case "opt_searchAbs":
+	   searchAbstract=!searchAbstract;
+	   redoQS();
+	   break;
+	 case "opt_searchComment":
+	   searchComment=!searchComment;
+	   redoQS();
+	   break;
+	 case "opt_useRegExp":
+	   searchRegExp=!searchRegExp;
+	   redoQS();
+	   break;
+	 case "opt_noAccents":
+	   noSquiggles=!noSquiggles;
+	   loadTableData();
+	   redoQS();
+	   break;
+	 }
+}
+
+function initPreferences(){
+	if(searchAbstract){document.getElementById("opt_searchAbs").checked = true;}
+	if(searchComment){document.getElementById("opt_searchComment").checked = true;}
+	if(noSquiggles){document.getElementById("opt_noAccents").checked = true;}
+	if(searchRegExp){document.getElementById("opt_useRegExp").checked = true;}
+	
+	if(numAbs==0) {document.getElementById("opt_searchAbs").parentNode.style.display = 'none';}
+	if(numRev==0) {document.getElementById("opt_searchComment").parentNode.style.display = 'none';}	
+}
+
+function toggleSettings(){
+	var togglebutton = document.getElementById('showsettings');
+	var settings = document.getElementById('settings');
+	
+	if(settings.className == "hidden"){
+		settings.className = "show";
+		togglebutton.innerText = "close settings";
+		togglebutton.textContent = "close settings";
+	}else{
+		settings.className = "hidden";
+		togglebutton.innerText = "settings...";		
+		togglebutton.textContent = "settings...";
+	}
+}
+
+-->
+</script>
+<style type="text/css">
+body { background-color: white; font-family: Arial, sans-serif; font-size: 13px; line-height: 1.2; padding: 1em; color: #2E2E2E; width: 50em; margin: auto auto; }
+
+form#quicksearch { width: auto; border-style: solid; border-color: gray; border-width: 1px 0px; padding: 0.7em 0.5em; display:none; position:relative; }
+span#searchstat {padding-left: 1em;}
+
+div#settings { margin-top:0.7em; /* border-bottom: 1px transparent solid; background-color: #efefef; border: 1px grey solid; */ }
+div#settings ul {margin: 0; padding: 0; }
+div#settings li {margin: 0; padding: 0 1em 0 0; display: inline; list-style: none; }
+div#settings li + li { border-left: 2px #efefef solid; padding-left: 0.5em;}
+div#settings input { margin-bottom: 0px;}
+
+div#settings.hidden {display:none;}
+
+#showsettings { border: 1px grey solid; padding: 0 0.5em; float:right; line-height: 1.6em; text-align: right; }
+#showsettings:hover { cursor: pointer; }
+
+.invalidsearch { background-color: red; }
+input[type="button"] { background-color: #efefef; border: 1px #2E2E2E solid;}
+
+table { border: 1px gray none; width: 100%; empty-cells: show; border-spacing: 0em 0.1em; margin: 1em 0em; }
+th, td { border: none; padding: 0.5em; vertical-align: top; text-align: justify; }
+
+td a { color: navy; text-decoration: none; }
+td a:hover  { text-decoration: underline; }
+
+tr.noshow { display: none;}
+tr.highlight td { background-color: #EFEFEF; border-top: 2px #2E2E2E solid; font-weight: bold; }
+tr.abstract td, tr.comment td, tr.bibtex td { background-color: #EFEFEF; text-align: justify; border-bottom: 2px #2E2E2E solid; }
+tr.nextshow td { border-bottom-style: none; }
+
+tr.bibtex pre { width: 100%; overflow: auto; white-space: pre-wrap;}
+p.infolinks { margin: 0.3em 0em 0em 0em; padding: 0px; }
+
+@media print {
+	p.infolinks, #qs_settings, #quicksearch, t.bibtex { display: none !important; }
+	tr { page-break-inside: avoid; }
+}
+</style>
+</head>
+<body>
+
+<form action="" id="quicksearch">
+<input type="text" id="qs_field" autocomplete="off" placeholder="Type to search..." /> <input type="button" onclick="clearQS()" value="clear" />
+<span id="searchstat">Matching entries: <span id="stat">0</span></span>
+<div id="showsettings" onclick="toggleSettings()">settings...</div>
+<div id="settings" class="hidden">
+<ul>
+<li><input type="checkbox" class="search_setting" id="opt_searchAbs" onchange="updateSetting(this)"><label for="opt_searchAbs"> include abstract</label></li>
+<li><input type="checkbox" class="search_setting" id="opt_searchComment" onchange="updateSetting(this)"><label for="opt_searchComment"> include comment</label></li>
+<li><input type="checkbox" class="search_setting" id="opt_useRegExp" onchange="updateSetting(this)"><label for="opt_useRegExp"> use RegExp</label></li>
+<li><input type="checkbox" class="search_setting" id="opt_noAccents" onchange="updateSetting(this)"><label for="opt_noAccents"> ignore accents</label></li>
+</ul>
+</div>
+</form>
+<table id="qs_table" border="1">
+<tbody>
+<tr id="Hliboky2022" class="entry">
+	<td>Hliboký M, Bundzel M and Husár S (2022), <i>"Detecting Ancient Mayan Construction Activity by U-Net"</i>, 2022 IEEE 20th Jubilee World Symposium on Applied Machine Intelligence and Informatics (SAMI). Poprad, Slovakia , pp. 000231-000236. IEEE.
+	<p class="infolinks">[<a href="javascript:toggleInfo('Hliboky2022','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('Hliboky2022','bibtex')">BibTeX</a>] [<a href="https://doi.org/10.1109/SAMI54271.2022.9780708" target="_blank">DOI</a>]</p>
+	</td>
+</tr>
+<tr id="abs_Hliboky2022" class="abstract noshow">
+	<td><b>Abstract</b>: This paper deals with the issue of semantic segmentation of geographic data. The work includes applying the acquired knowledge to accurate data, specifically the design and verification of the correct procedure for processing LiDAR data from aerial surveillance. The research objective is to design relevant normalization algorithms for the digital elevation model and its modification to a suitable input to other processes. The main goal of this paper is to use a convolutional neural network U-net for the segmentation of objects of interest on selected data. The method of reverse reconstruction into the original space representation of the landscape area is compiled for partial outputs from the semantic-segmentation model. The research also demonstrates the choice of the correct evaluation metrics to verify the functionality and accuracy of our previous experiments. The prerequisite for the results was the implementation of adequate methods and the right choice of error functions that would successfully semantically segment a digital elevation model. Indicators of the correctness of verified implemented procedures were implemented on the selected metrics.</td>
+</tr>
+<tr id="bib_Hliboky2022" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@inproceedings{Hliboky2022,
+  author = {Maroš Hliboký and Marek Bundzel and Stanislav Husár},
+  title = {Detecting Ancient Mayan Construction Activity by U-Net},
+  journal = {2022 IEEE 20th Jubilee World Symposium on Applied Machine Intelligence and Informatics (SAMI)},
+  publisher = {IEEE},
+  year = {2022},
+  pages = {000231--000236},
+  doi = {10.1109/SAMI54271.2022.9780708}
+}
+</pre></td>
+</tr>
+<tr id="Mueller2006" class="entry">
+	<td>Müller P, Vereenooghe T, Wonka P, Paap I and Van Gool L (2006), <i>"Procedural 3D reconstruction of Puuc buildings in Xkipché"</i>, In Proceedings of the 7th International conference on Virtual Reality, Archaeology and Intelligent Cultural Heritage. Goslar, DEU, October, 2006. , pp. 139-146. Eurographics Association.
+	<p class="infolinks">[<a href="javascript:toggleInfo('Mueller2006','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('Mueller2006','bibtex')">BibTeX</a>]</p>
+	</td>
+</tr>
+<tr id="abs_Mueller2006" class="abstract noshow">
+	<td><b>Abstract</b>: This paper examines how architectural shape grammars can be used to procedurally generate 3D reconstructions of an archaeological site. The Puuc-style buildings found in Xkipché, Mexico, were used as a test-case. We first introduce the ancient Mayan site of Xkipché and give an overview of the building types as distinguished by the archaeologists, based on excavations and surveys of the building remains at the surface. Secondly, we outline the elements of the building design that are characteristic of the Puuc architecture. For the creation of the actual building geometries, we further determine the shape grammar rules for the different architectural parts. The modeling system can then be used to reconstruct the whole site based on various GIS (Geographical Information Systems) data given as input, such as building footprints, architectural information, and elevation. The results demonstrate that our modeling system is, in contrast to traditional 3D modeling, able to efficiently construct a large number of high quality geometric models at low cost.</td>
+</tr>
+<tr id="bib_Mueller2006" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@conference{Mueller2006,
+  author = {Müller, Pascal and Vereenooghe, Tijl and Wonka, Peter and Paap, Iken and Van Gool, Luc},
+  title = {Procedural 3D reconstruction of Puuc buildings in Xkipché},
+  booktitle = {Proceedings of the 7th International conference on Virtual Reality, Archaeology and Intelligent Cultural Heritage},
+  publisher = {Eurographics Association},
+  year = {2006},
+  pages = {139--146}
+}
+</pre></td>
+</tr>
+<tr id="Sabloff2019" class="entry">
+	<td>Sabloff JA (2019), <i>"How Maya Archaeologists Discovered the 99% Through the Study of Settlement Patterns"</i>, Annual Review of Anthropology.  Vol. 48(1), pp. 1-16.
+	<p class="infolinks">[<a href="javascript:toggleInfo('Sabloff2019','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('Sabloff2019','bibtex')">BibTeX</a>] [<a href="https://doi.org/10.1146/annurev-anthro-102218-011044" target="_blank">DOI</a>]</p>
+	</td>
+</tr>
+<tr id="abs_Sabloff2019" class="abstract noshow">
+	<td><b>Abstract</b>: This article presents an autobiographical perspective on the changing nature of Maya archaeology, focusing on the role of settlement pattern studies in illuminating the lives of commoners as well as on the traditional emphasis on the ruling elite. Advances in understanding the nature of nonelite peoples in ancient Maya society are discussed, as are the many current gaps in scholarly understandings of pre-Columbian Maya civilization, especially with regard to the diversity of ancient “commoners” and the difficulty in analyzing them as a single group.</td>
+</tr>
+<tr id="bib_Sabloff2019" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@article{Sabloff2019,
+  author = {Sabloff, Jeremy A.},
+  title = {How Maya Archaeologists Discovered the 99% Through the Study of Settlement Patterns},
+  journal = {Annual Review of Anthropology},
+  year = {2019},
+  volume = {48},
+  number = {1},
+  pages = {1--16},
+  doi = {10.1146/annurev-anthro-102218-011044}
+}
+</pre></td>
+</tr>
+<tr id="Dunning1994" class="entry">
+	<td>Dunning NP and Kowalski JK (1994), <i>"Lords of the Hills: Classic Maya settlement patterns and political iconography in the Puuc region, Mexico"</i>, Ancient Mesoamerica.  Vol. 5(1), pp. 63-95. Cambridge University Press (CUP).
+	<p class="infolinks"> [<a href="javascript:toggleInfo('Dunning1994','bibtex')">BibTeX</a>] [<a href="https://doi.org/10.1017/s095653610000105x" target="_blank">DOI</a>] [<a href="https://www.jstor.org/stable/26307186" target="_blank">URL</a>]</p>
+	</td>
+</tr>
+<tr id="bib_Dunning1994" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@article{Dunning1994,
+  author = {Nicholas P. Dunning and Jeff Karl Kowalski},
+  title = {Lords of the Hills: Classic Maya settlement patterns and political iconography in the Puuc region, Mexico},
+  journal = {Ancient Mesoamerica},
+  publisher = {Cambridge University Press (CUP)},
+  year = {1994},
+  volume = {5},
+  number = {1},
+  pages = {63--95},
+  url = {https://www.jstor.org/stable/26307186},
+  doi = {10.1017/s095653610000105x}
+}
+</pre></td>
+</tr>
+<tr id="Hammond1996" class="entry">
+	<td>Hammond N, Dunning NP, Prem HJ and Sievert AK (1996), <i>"Lords of the Hills: Ancient Maya Settlement in the Puuc Region, Yucatan, Mexico"</i>, Journal of Field Archaeology.  Vol. 23(2), pp. 260. JSTOR.
+	<p class="infolinks"> [<a href="javascript:toggleInfo('Hammond1996','bibtex')">BibTeX</a>] [<a href="https://doi.org/10.2307/530509" target="_blank">DOI</a>]</p>
+	</td>
+</tr>
+<tr id="bib_Hammond1996" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@article{Hammond1996,
+  author = {Norman Hammond and Nicholas P. Dunning and Hanns J. Prem and April Kay Sievert},
+  title = {Lords of the Hills: Ancient Maya Settlement in the Puuc Region, Yucatan, Mexico},
+  journal = {Journal of Field Archaeology},
+  publisher = {JSTOR},
+  year = {1996},
+  volume = {23},
+  number = {2},
+  pages = {260},
+  doi = {10.2307/530509}
+}
+</pre></td>
+</tr>
+<tr id="Tributsch2017" class="entry">
+	<td>Tributsch H (2017), <i>"On the reddish, glittery mud the Inca used for perfecting their stone masonry"</i>, Journal of Earth Sciences &amp;amp; Environmental Studies.  Vol. 3(1), pp. 309-324.
+	<p class="infolinks"> [<a href="javascript:toggleInfo('Tributsch2017','bibtex')">BibTeX</a>]</p>
+	</td>
+</tr>
+<tr id="bib_Tributsch2017" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@article{Tributsch2017,
+  author = {Tributsch, Helmut},
+  title = {On the reddish, glittery mud the Inca used for perfecting their stone masonry},
+  journal = {Journal of Earth Sciences &amp;amp; Environmental Studies},
+  year = {2017},
+  volume = {3},
+  number = {1},
+  pages = {309--324}
+}
+</pre></td>
+</tr>
+<tr id="trik1963splendid" class="entry">
+	<td>Trik AS (1963), <i>"The Splendid Tomb of Temple I at Tikal, Guatemala"</i>, Expedition Magazine.  Vol. 6(1)
+	<p class="infolinks"> [<a href="javascript:toggleInfo('trik1963splendid','bibtex')">BibTeX</a>] [<a href="https://www.penn.museum/sites/expedition/the-splendid-tomb-of-temple-i-at-tikal-guatemala/" target="_blank">URL</a>]</p>
+	</td>
+</tr>
+<tr id="bib_trik1963splendid" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@article{trik1963splendid,
+  author = {Trik, Aubrey S.},
+  title = {The Splendid Tomb of Temple I at Tikal, Guatemala},
+  journal = {Expedition Magazine},
+  year = {1963},
+  volume = {6},
+  number = {1},
+  url = {https://www.penn.museum/sites/expedition/the-splendid-tomb-of-temple-i-at-tikal-guatemala/}
+}
+</pre></td>
+</tr>
+<tr id="BVMC:953339" class="entry">
+	<td>Díaz del Castillo, Bernal (2019), <i>"Historia verdadera de la conquista de la Nueva-España"</i>  Alicante: Biblioteca Virtual Miguel de Cervantes, 2019.
+	<p class="infolinks"> [<a href="javascript:toggleInfo('BVMC:953339','bibtex')">BibTeX</a>] [<a href="https://www.cervantesvirtual.com/nd/ark:/59851/bmc0953339" target="_blank">URL</a>]</p>
+	</td>
+</tr>
+<tr id="bib_BVMC:953339" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@book{BVMC:953339,
+  author = {Díaz del Castillo, Bernal},
+  title = {Historia verdadera de la conquista de la Nueva-España},
+  publisher = {Alicante: Biblioteca Virtual Miguel de Cervantes, 2019},
+  year = {2019},
+  url = {https://www.cervantesvirtual.com/nd/ark:/59851/bmc0953339}
+}
+</pre></td>
+</tr>
+<tr id="smarthistory_codex_mendoza" class="entry">
+	<td>Kilroy-Ewbank L (), <i>"Frontispiece of the Codex Mendoza"</i> 
+	<p class="infolinks"> [<a href="javascript:toggleInfo('smarthistory_codex_mendoza','bibtex')">BibTeX</a>] [<a href="https://smarthistory.org/frontispiece-of-the-codex-mendoza/" target="_blank">URL</a>]</p>
+	</td>
+</tr>
+<tr id="bib_smarthistory_codex_mendoza" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@online{smarthistory_codex_mendoza,
+  author = {Kilroy-Ewbank, Lauren},
+  title = {Frontispiece of the Codex Mendoza},
+  url = {https://smarthistory.org/frontispiece-of-the-codex-mendoza/}
+}
+</pre></td>
+</tr>
+<tr id="gobmx_simbolo_tenochtitlan" class="entry">
+	<td>Secretaría de Cultura (), <i>"Rastrean en fuentes históricas el origen del símbolo fundacional de Tenochtitlan"</i> 
+	<p class="infolinks"> [<a href="javascript:toggleInfo('gobmx_simbolo_tenochtitlan','bibtex')">BibTeX</a>] [<a href="https://www.gob.mx/cultura/prensa/rastrean-en-fuentes-historicas-el-origen-del-simbolo-fundacional-de-tenochtitlan" target="_blank">URL</a>]</p>
+	</td>
+</tr>
+<tr id="bib_gobmx_simbolo_tenochtitlan" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@online{gobmx_simbolo_tenochtitlan,
+  author = {Secretaría de Cultura},
+  title = {Rastrean en fuentes históricas el origen del símbolo fundacional de Tenochtitlan},
+  url = {https://www.gob.mx/cultura/prensa/rastrean-en-fuentes-historicas-el-origen-del-simbolo-fundacional-de-tenochtitlan}
+}
+</pre></td>
+</tr>
+<tr id="madajczak2024sisters" class="entry">
+	<td>Madajczak J (2024), <i>"Sisters, Liaisons, and Dangerous Things: A Cognitive Approach to a Nahua Metaphor of Early Colonial Stories"</i>, Ancient Mesoamerica.  Vol. 35(3), pp. 937-949. Cambridge University Press.
+	<p class="infolinks"> [<a href="javascript:toggleInfo('madajczak2024sisters','bibtex')">BibTeX</a>] [<a href="https://www.cambridge.org/core/services/aop-cambridge-core/content/view/92ED4710B6AF1244ABE67E090B71968C/S0956536124000129a.pdf" target="_blank">URL</a>]</p>
+	</td>
+</tr>
+<tr id="bib_madajczak2024sisters" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@article{madajczak2024sisters,
+  author = {Madajczak, Julia},
+  title = {Sisters, Liaisons, and Dangerous Things: A Cognitive Approach to a Nahua Metaphor of Early Colonial Stories},
+  journal = {Ancient Mesoamerica},
+  publisher = {Cambridge University Press},
+  year = {2024},
+  volume = {35},
+  number = {3},
+  pages = {937--949},
+  url = {https://www.cambridge.org/core/services/aop-cambridge-core/content/view/92ED4710B6AF1244ABE67E090B71968C/S0956536124000129a.pdf}
+}
+</pre></td>
+</tr>
+<tr id="se75-000" class="entry">
+	<td>Moore JD (2015), <i>"Tradition Summary: Chimu"</i> New Haven, Conn. 
+	<p class="infolinks">[<a href="javascript:toggleInfo('se75-000','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('se75-000','bibtex')">BibTeX</a>] [<a href="https://ehrafarchaeology.yale.edu/document?id=se75-000" target="_blank">URL</a>]</p>
+	</td>
+</tr>
+<tr id="abs_se75-000" class="abstract noshow">
+	<td><b>Abstract</b>: This is a summary of the Chimu tradition. Information is presented on major aspects of the Chimu archaeological tradition.</td>
+</tr>
+<tr id="bib_se75-000" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@article{se75-000,
+  author = {Moore, Jerry D.},
+  title = {Tradition Summary: Chimu},
+  year = {2015},
+  note = {Based on Jerry Moore, ``Chimú,'' in Encyclopedia of Prehistory, vol. 7, edited by Peter N. Peregrine and Melvin Ember (New York: Plenum Publishing Corporation, 2002). Includes bibliographical references.},
+  url = {https://ehrafarchaeology.yale.edu/document?id=se75-000}
+}
+</pre></td>
+</tr>
+<tr id="britannicaIncaGold" class="entry">
+	<td>Encyclopaedia Britannica (), <i>"The Importance of Gold to the Incas"</i> 
+	<p class="infolinks"> [<a href="javascript:toggleInfo('britannicaIncaGold','bibtex')">BibTeX</a>] [<a href="https://www.britannica.com/video/gold-importance-Incas/-193772" target="_blank">URL</a>]</p>
+	</td>
+</tr>
+<tr id="bib_britannicaIncaGold" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@online{britannicaIncaGold,
+  author = {Encyclopaedia Britannica},
+  title = {The Importance of Gold to the Incas},
+  url = {https://www.britannica.com/video/gold-importance-Incas/-193772}
+}
+</pre></td>
+</tr>
+<tr id="carcedo2024ancient" class="entry">
+	<td>Carcedo de Mufarech P (2024), <i>"Ancient Andean Metalworking (900--1532 CE)"</i>, October, 2024. 
+	<p class="infolinks"> [<a href="javascript:toggleInfo('carcedo2024ancient','bibtex')">BibTeX</a>] [<a href="https://www.metmuseum.org/essays/ancient-andean-metalworking" target="_blank">URL</a>]</p>
+	</td>
+</tr>
+<tr id="bib_carcedo2024ancient" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@online{carcedo2024ancient,
+  author = {Carcedo de Mufarech, Paloma},
+  title = {Ancient Andean Metalworking (900--1532 CE)},
+  year = {2024},
+  url = {https://www.metmuseum.org/essays/ancient-andean-metalworking}
+}
+</pre></td>
+</tr>
+<tr id="scher2015machu" class="entry">
+	<td>Scher S (2015), <i>"Machu Picchu"</i>, August, 2015. 
+	<p class="infolinks"> [<a href="javascript:toggleInfo('scher2015machu','bibtex')">BibTeX</a>] [<a href="https://smarthistory.org/machu-picchu/" target="_blank">URL</a>]</p>
+	</td>
+</tr>
+<tr id="bib_scher2015machu" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@online{scher2015machu,
+  author = {Scher, Sarahh},
+  title = {Machu Picchu},
+  year = {2015},
+  url = {https://smarthistory.org/machu-picchu/}
+}
+</pre></td>
+</tr>
+<tr id="quave2022inka" class="entry">
+	<td>Quave KE (2022), <i>"The Inka khipu"</i>, January, 2022. 
+	<p class="infolinks"> [<a href="javascript:toggleInfo('quave2022inka','bibtex')">BibTeX</a>] [<a href="https://smarthistory.org/inka-khipu/" target="_blank">URL</a>]</p>
+	</td>
+</tr>
+<tr id="bib_quave2022inka" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@online{quave2022inka,
+  author = {Quave, Kylie E.},
+  title = {The Inka khipu},
+  year = {2022},
+  url = {https://smarthistory.org/inka-khipu/}
+}
+</pre></td>
+</tr>
+<tr id="NMAI2015" class="entry">
+	<td>National Museum of the American Indian (2015), <i>"The Great Inka Road: Engineering an Empire"</i> 
+	<p class="infolinks"> [<a href="javascript:toggleInfo('NMAI2015','bibtex')">BibTeX</a>] [<a href="https://americanindian.si.edu/inkaroad/index.html" target="_blank">URL</a>]</p>
+	</td>
+</tr>
+<tr id="bib_NMAI2015" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@online{NMAI2015,
+  author = {National Museum of the American Indian},
+  title = {The Great Inka Road: Engineering an Empire},
+  year = {2015},
+  url = {https://americanindian.si.edu/inkaroad/index.html}
+}
+</pre></td>
+</tr>
+<tr id="museoamerica_figuraoro" class="entry">
+	<td>Museo de América (1400), <i>"Figura antropomorfa de oro"</i> 
+	<p class="infolinks"> [<a href="javascript:toggleInfo('museoamerica_figuraoro','bibtex')">BibTeX</a>] [<a href="https://www.cultura.gob.es/museodeamerica/en/coleccion/america-prehispanica/figura-antropomorfa-de-oro---orej-n-.html" target="_blank">URL</a>]</p>
+	</td>
+</tr>
+<tr id="bib_museoamerica_figuraoro" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@online{museoamerica_figuraoro,
+  author = {Museo de América},
+  title = {Figura antropomorfa de oro},
+  year = {1400},
+  url = {https://www.cultura.gob.es/museodeamerica/en/coleccion/america-prehispanica/figura-antropomorfa-de-oro---orej-n-.html}
+}
+</pre></td>
+</tr>
+<tr id="Tassi2012" class="entry">
+	<td>Tassi N (2012), <i>"‘Dancing the image’: materiality and spirituality in Andean religious ‘images’"</i>, Journal of the Royal Anthropological Institute.  Vol. 18(2), pp. 285-310.
+	<p class="infolinks">[<a href="javascript:toggleInfo('Tassi2012','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('Tassi2012','bibtex')">BibTeX</a>] [<a href="https://doi.org/10.1111/j.1467-9655.2012.01744.x" target="_blank">DOI</a>] [<a href="https://rai.onlinelibrary.wiley.com/doi/abs/10.1111/j.1467-9655.2012.01744.x" target="_blank">URL</a>]</p>
+	</td>
+</tr>
+<tr id="abs_Tassi2012" class="abstract noshow">
+	<td><b>Abstract</b>: In the Christian tradition, representing the divine has often been considered both an impossible and yet necessary endeavour rooted in the human need in certain moments of weakness to visualize God. In this article, based on research findings from fieldwork carried out with urban indigenous groups in La Paz, Bolivia, I suggest that the articulation of local and Catholic representational traditions and practices has produced an understanding of the religious image not so much as an object of detached contemplation or a reference to a religious symbol but rather as an energized element which physically shapes the relationship and exchange between the material and the spiritual world. I suggest that through a study of Andean religious images we may be able to produce an alternative ontological perspective on the relationship between the spiritual, material, and living worlds. Résumé Dans la tradition chrétienne, la représentation du divin est souvent considérée comme une gageure impossible et pourtant nécessaire, motivée par la nécessité humaine de visualiser Dieu dans les moments de faiblesse. À partir des matériaux de terrain obtenus auprès de groupes autochtones urbains à La Paz, en Bolivie, l'auteur suggère ici que l'articulation des traditions et pratiques de représentation locales et catholiques a conduit à concevoir l'image religieuse moins comme un objet de contemplation détachée ou une référence à un symbole religieux que comme un élément chargé d'énergie, qui donne physiquement forme à la relation et aux échanges entre le monde matériel et le monde spirituel. L'article suggère qu'à travers l'étude des images religieuses andines, on pourrait élaborer un autre point de vue ontologique sur la relation entre les mondes spirituel, matériel et vivant.</td>
+</tr>
+<tr id="bib_Tassi2012" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@article{Tassi2012,
+  author = {Tassi, Nicco},
+  title = {‘Dancing the image’: materiality and spirituality in Andean religious ‘images’},
+  journal = {Journal of the Royal Anthropological Institute},
+  year = {2012},
+  volume = {18},
+  number = {2},
+  pages = {285-310},
+  url = {https://rai.onlinelibrary.wiley.com/doi/abs/10.1111/j.1467-9655.2012.01744.x},
+  doi = {10.1111/j.1467-9655.2012.01744.x}
+}
+</pre></td>
+</tr>
+<tr id="Protzen1985" class="entry">
+	<td>Protzen J-P (1985), <i>"Inca Quarrying and Stonecutting"</i>, Journal of the Society of Architectural Historians., 05, 1985.  Vol. 44(2), pp. 161-182.
+	<p class="infolinks">[<a href="javascript:toggleInfo('Protzen1985','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('Protzen1985','bibtex')">BibTeX</a>] [<a href="https://doi.org/10.2307/990027" target="_blank">DOI</a>] [<a href="https://doi.org/10.2307/990027" target="_blank">URL</a>]</p>
+	</td>
+</tr>
+<tr id="abs_Protzen1985" class="abstract noshow">
+	<td><b>Abstract</b>: Inca construction techniques have long been the subject of wild speculation. Investigations of ancient quarry sites and of numerous cut-stone walls reveal that the amazing Inca constructions were built with very simple means. Stones were selected out of rock falls or just broken out of a rock face with pry-bars. If the blocks needed to be parted, big hammerstones were used to split them. To dress the stones smaller hammerstones were used to pound them until they had the desired shape. The fitting of one stone to another was done by cutting the already laid stones to receive the next ones in a trial-and-error fashion. Experiments show that with this process stones can be mined, cut, dressed, and fit with little effort and in a short time.</td>
+</tr>
+<tr id="bib_Protzen1985" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@article{Protzen1985,
+  author = {Protzen, Jean-Pierre},
+  title = {Inca Quarrying and Stonecutting},
+  journal = {Journal of the Society of Architectural Historians},
+  year = {1985},
+  volume = {44},
+  number = {2},
+  pages = {161-182},
+  url = {https://doi.org/10.2307/990027},
+  doi = {10.2307/990027}
+}
+</pre></td>
+</tr>
+<tr id="NMAI2015a" class="entry">
+	<td>National Museum of the American Indian (2015), <i>"Chimú"</i>, In The Great Inka Road: Engineering an Empire. 
+	<p class="infolinks"> [<a href="javascript:toggleInfo('NMAI2015a','bibtex')">BibTeX</a>] [<a href="https://americanindian.si.edu/inkaroad/ancestors/beginningsoftheroad/chimu.html" target="_blank">URL</a>]</p>
+	</td>
+</tr>
+<tr id="bib_NMAI2015a" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@online{NMAI2015a,
+  author = {National Museum of the American Indian},
+  title = {Chimú},
+  booktitle = {The Great Inka Road: Engineering an Empire},
+  year = {2015},
+  url = {https://americanindian.si.edu/inkaroad/ancestors/beginningsoftheroad/chimu.html}
+}
+</pre></td>
+</tr>
+<tr id="cartwright2022pizarro" class="entry">
+	<td>Cartwright M (2022), <i>"Francisco Pizarro"</i>, June, 2022. 
+	<p class="infolinks"> [<a href="javascript:toggleInfo('cartwright2022pizarro','bibtex')">BibTeX</a>] [<a href="https://www.worldhistory.org/Francisco_Pizarro/" target="_blank">URL</a>]</p>
+	</td>
+</tr>
+<tr id="bib_cartwright2022pizarro" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@online{cartwright2022pizarro,
+  author = {Cartwright, Mark},
+  title = {Francisco Pizarro},
+  year = {2022},
+  url = {https://www.worldhistory.org/Francisco_Pizarro/}
+}
+</pre></td>
+</tr>
+<tr id="worldhistoryincaTimeline" class="entry">
+	<td>World History Encyclopedia (), <i>"Timeline: Inca Civilization"</i> 
+	<p class="infolinks"> [<a href="javascript:toggleInfo('worldhistoryincaTimeline','bibtex')">BibTeX</a>] [<a href="https://www.worldhistory.org/timeline/Inca_Civilization/" target="_blank">URL</a>]</p>
+	</td>
+</tr>
+<tr id="bib_worldhistoryincaTimeline" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@online{worldhistoryincaTimeline,
+  author = {World History Encyclopedia},
+  title = {Timeline: Inca Civilization},
+  url = {https://www.worldhistory.org/timeline/Inca_Civilization/}
+}
+</pre></td>
+</tr>
+</tbody>
+</table>
+<footer>
+ <small>Created by <a href="https://www.jabref.org">JabRef</a> on 2026/11/09.</small>
+</footer>
+<!-- file generated by JabRef -->
+</body>
+</html>
